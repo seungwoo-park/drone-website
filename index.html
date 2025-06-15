@@ -166,9 +166,9 @@
         },
         ui: {
             selectedDroneId: 'drone1',
-            activeMapMode: 'none', // 'none', 'recon', 'emergency', 'set_home'
+            activeMapMode: 'none',
         },
-        missions: { // 공용 미션
+        missions: {
             currentMissionPoints: [],
             savedMissions: [],
         }
@@ -204,15 +204,13 @@
             this.updatePowerUI(drone);
             this.elements['home-btn'].disabled = !isPowerOn || isFlying;
             this.elements['home-btn'].textContent = `🏠 홈 지정 ${state.ui.activeMapMode === 'set_home' ? '(지정 중...)' : ''}`;
-
+            
             const controlButtons = ['sequential-mode-btn', 'emergency-mode-btn', 'inspection-arming-btn', 'inspection-hover-btn', 'save-mission-btn'];
             controlButtons.forEach(id => { this.elements[id].disabled = !canTakeOff; });
 
             this.elements['emergency-return-btn'].disabled = !isFlying;
             
-            this.elements['sequential-mode-btn'].textContent = `정찰 모드: ${state.ui.activeMapMode === 'recon' ? 'ON' : 'OFF'}`;
             this.elements['sequential-mode-btn'].style.backgroundColor = state.ui.activeMapMode === 'recon' ? 'green' : '';
-            this.elements['emergency-mode-btn'].textContent = `응급 모드: ${state.ui.activeMapMode === 'emergency' ? 'ON' : 'OFF'}`;
             this.elements['emergency-mode-btn'].style.backgroundColor = state.ui.activeMapMode === 'emergency' ? 'red' : '';
         },
         updatePowerUI(drone) {
@@ -223,46 +221,15 @@
             reconnectContainer.innerHTML = '';
             powerBtn.disabled = false;
             
-            // 상세한 powerState에 따라 UI를 다르게 그립니다.
             switch(drone.powerState) {
-                case 'off':
-                    powerBtn.textContent = '드론 전원: OFF';
-                    powerBtn.style.backgroundColor = '';
-                    powerStatusDiv.textContent = '드론 상태: 꺼짐';
-                    powerStatusDiv.style.backgroundColor = '#e7f1ff'; powerStatusDiv.style.color = '#004085';
-                    break;
-                case 'turning_on':
-                    powerBtn.textContent = '전원 켜는 중...';
-                    powerBtn.style.backgroundColor = 'gray';
-                    powerBtn.disabled = true;
-                    powerStatusDiv.textContent = '드론 상태: 연결 시도 중...';
-                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
-                    break;
-                case 'reconnecting':
-                    powerBtn.textContent = '재연결 중...';
-                    powerBtn.style.backgroundColor = 'gray';
-                    powerBtn.disabled = true;
-                    powerStatusDiv.textContent = '드론 상태: 재연결 시도 중...';
-                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
-                    break;
-                case 'on':
-                    powerBtn.textContent = '드론 전원: ON';
-                    powerBtn.style.backgroundColor = 'green';
-                    powerStatusDiv.textContent = '드론 상태: 연결됨';
-                    powerStatusDiv.style.backgroundColor = '#d1e7dd'; powerStatusDiv.style.color = '#0a3622';
-                    break;
-                case 'turning_off':
-                    powerBtn.textContent = '전원 끄는 중...';
-                    powerBtn.style.backgroundColor = 'gray';
-                    powerBtn.disabled = true;
-                    powerStatusDiv.textContent = '드론 상태: 연결 해제 중...';
-                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
-                    break;
+                case 'off': powerBtn.textContent = '드론 전원: OFF'; powerBtn.style.backgroundColor = ''; powerStatusDiv.textContent = '드론 상태: 꺼짐'; break;
+                case 'turning_on': powerBtn.textContent = '전원 켜는 중...'; powerBtn.style.backgroundColor = 'gray'; powerBtn.disabled = true; powerStatusDiv.textContent = '드론 상태: 연결 시도 중...'; break;
+                case 'reconnecting': powerBtn.textContent = '재연결 중...'; powerBtn.style.backgroundColor = 'gray'; powerBtn.disabled = true; powerStatusDiv.textContent = '드론 상태: 재연결 시도 중...'; break;
+                case 'on': powerBtn.textContent = '드론 전원: ON'; powerBtn.style.backgroundColor = 'green'; powerStatusDiv.textContent = '드론 상태: 연결됨'; break;
+                case 'turning_off': powerBtn.textContent = '전원 끄는 중...'; powerBtn.style.backgroundColor = 'gray'; powerBtn.disabled = true; powerStatusDiv.textContent = '드론 상태: 연결 해제 중...'; break;
                 case 'failed':
-                    powerBtn.textContent = '드론 전원: 연결 실패';
-                    powerBtn.style.backgroundColor = 'red';
+                    powerBtn.textContent = '드론 전원: 연결 실패'; powerBtn.style.backgroundColor = 'red';
                     powerStatusDiv.textContent = `연결 실패: ${drone.lastError || '알 수 없는 오류'}`;
-                    powerStatusDiv.style.backgroundColor = '#f8d7da'; powerStatusDiv.style.color = '#721c24';
                     reconnectContainer.innerHTML = `<button onclick="AppController.reconnectDrone()">🔁 드론 재연결</button>`;
                     break;
             }
@@ -291,7 +258,8 @@
             green: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/green-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             yellow: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             blinkingRed: L.divIcon({ className: 'blinking-red-marker', html: `<div class="blinking-marker">📍</div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
-        },
+            blinkingRed: L.divIcon({ className: 'blinking-yellow-marker', html: `<div class="blinking-yellow-dot"><img src="https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png" width="32" height="32"></div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
+        },        
         init() {
             this.map = L.map('map').setView([37.3402, 126.7335], 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
@@ -342,30 +310,90 @@
         // ...
     };
 
+    /** WebRTC 카메라 연결을 전담하는 객체 (이전 코드 통합 및 개선) */
     const WebRTCManager = {
-        pc: null,
+        pc: null, 
         ws: null,
-        droneIpMap: { // ❗️이 IP는 실제 드론의 내부 IP로 수정해야 합니다.
+        elements: {}, // UI 요소를 저장할 곳
+        droneIpMap: {
+            // ❗️이 IP 주소들은 실제 드론의 내부 IP로 반드시 수정해야 합니다.
             'drone1': '192.168.137.86',
             'drone2': '192.168.137.87',
             'drone3': '192.168.137.88',
             'drone4': '192.168.137.89',
             'drone5': '192.168.137.90',
         },
+        init(uiElements) {
+            this.elements = uiElements;
+            console.log("✅ WebRTCManager Initialized");
+        },
         connect(droneId) {
-            this.disconnect(); // 기존 연결 정리
+            this.disconnect(); // 연결 시작 전, 항상 기존 연결을 깨끗하게 정리
+            
             const ip = this.droneIpMap[droneId];
             if (!ip) {
-                console.error(`${droneId}의 IP 주소가 없습니다.`);
+                this.setStatus(`'${droneId}'의 카메라 IP 정보가 없습니다.`, 'error');
                 return;
             }
-            console.log(`📹 ${droneId}(${ip}) 카메라 연결을 시작합니다.`);
-            // ... WebRTC 연결 설정 및 시작 로직 ...
+            
+            this.setStatus(`'${droneId}' 카메라(${ip}) 연결 시도 중...`, 'info');
+            
+            try {
+                this.pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+                this.ws = new WebSocket(`ws://${ip}:8765`);
+                
+                this.setupWebRTCHandlers();
+                this.setupWebSocketHandlers();
+            } catch (error) {
+                console.error("WebRTC 초기화 오류:", error);
+                this.setStatus(`초기화 오류: ${error.message}`, 'error');
+            }
         },
         disconnect() {
             if (this.pc) this.pc.close();
             if (this.ws) this.ws.close();
+            if (this.elements.video) this.elements.video.srcObject = null;
             console.log("📹 WebRTC 연결이 종료되었습니다.");
+        },
+        setupWebSocketHandlers() {
+            this.ws.onopen = async () => {
+                this.setStatus("서버 연결됨. 스트리밍 협상 시작...", 'info');
+                this.pc.addTransceiver('video', { direction: 'recvonly' });
+                const offer = await this.pc.createOffer();
+                await this.pc.setLocalDescription(offer);
+                this.ws.send(JSON.stringify({ type: "offer", sdp: offer.sdp, sdpType: offer.type }));
+            };
+            this.ws.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === "answer") {
+                        await this.pc.setRemoteDescription(new RTCSessionDescription({ type: data.sdpType, sdp: data.sdp }));
+                    } else if (data.type === "candidate" && data.candidate) {
+                        await this.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    }
+                } catch (e) { console.error("WS 메시지 처리 오류:", e); }
+            };
+            this.ws.onerror = () => this.setStatus("카메라 연결 오류. 드론이 실행 중인지 확인하세요.", 'error');
+            this.ws.onclose = () => this.setStatus("카메라 연결이 종료되었습니다.", 'warning');
+        },
+        setupWebRTCHandlers() {
+            this.pc.ontrack = (event) => {
+                if (event.track.kind === 'video') {
+                    this.elements.video.srcObject = event.streams[0];
+                    this.elements.video.play().catch(e => console.error("비디오 재생 오류:", e));
+                    this.setStatus("카메라 스트리밍 중...", 'success');
+                }
+            };
+            this.pc.oniceconnectionstatechange = () => {
+                if (this.elements.stats) this.elements.stats.innerText = `ICE State: ${this.pc.iceConnectionState}`;
+            };
+        },
+        setStatus(message, type = 'info') {
+            const statusEl = this.elements.status; // HTML의 id="status"
+            if (!statusEl) return;
+            statusEl.textContent = message;
+            const colorMap = { success: "#d1e7dd", error: "#f8d7da", warning: "#fff3cd", info: "#cff4fc" };
+            statusEl.style.backgroundColor = colorMap[type] || colorMap.info;
         }
     };
 
@@ -377,7 +405,9 @@
         init() {
             UIManager.init();
             MapManager.init();
+            WebRTCManager.init(UIManager.elements);
             this.addEventListeners();
+            this.selectDrone(State.ui.selectedDroneId); // 초기 드론 선택 및 카메라 연결
             UIManager.render(State);
             console.log("✅ Drone Control Center is Online.");
         },
@@ -392,15 +422,20 @@
             UIManager.elements['emergency-return-btn'].addEventListener('click', () => this.emergencyReturn());
             UIManager.elements['save-mission-btn'].addEventListener('click', () => this.saveMission());
             UIManager.elements['logout-btn'].addEventListener('click', () => this.logout());
+            const reconnectBtn = document.querySelector('.reconnect-btn'); // 클래스로 찾기
+            if(reconnectBtn) reconnectBtn.addEventListener('click', () => this.reconnectCamera());
         },
-        
         /** 드론 선택 시 호출됩니다. */
         selectDrone(droneId) {
             State.ui.selectedDroneId = droneId;
-            // WebRTCManager.connect(droneId); // 선택된 드론의 카메라 연결
+            WebRTCManager.connect(droneId); // 선택된 드론의 카메라 연결
             UIManager.render(State);
         },
-
+        /** [추가됨] 카메라 재연결을 지시하는 함수 */
+        reconnectCamera() {
+            console.log(`📹 ${State.ui.selectedDroneId} 카메라 재연결을 시도합니다...`);
+            WebRTCManager.connect(State.ui.selectedDroneId);
+        },
         // --- 사용자 액션 처리 ---
         /** 전원 버튼 토글 로직 */
         async togglePower() {
@@ -612,7 +647,14 @@
     // =======================================================================
     // 4. 애플리케이션 시작
     // =======================================================================
-    window.addEventListener('load', () => AppController.init());
+    window.addEventListener('load', () => {
+        AppController.init();
+    });
+
+    /** [추가됨] 페이지를 떠나기 전 모든 연결을 정리합니다. */
+    window.addEventListener('beforeunload', () => {
+        WebRTCManager.disconnect();
+    });
 </script>
 </body>
 </html>
