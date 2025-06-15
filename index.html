@@ -188,7 +188,7 @@
         },
         render(state) {
             this.renderControlPanel(state);
-            this.renderMissionList(state.missions.savedMissions);
+            this.renderMissionList(state.missions.savedMissions); // 수정된 renderMissionList 호출
             this.renderDroneStatusPanel(state); // [추가됨] 상세 상태 패널 렌더링
             this.elements.droneSelector.value = state.ui.selectedDroneId;
         },
@@ -241,7 +241,8 @@
             missions.forEach((mission, i) => {
                 const li = document.createElement('li');
                 li.innerHTML = `
-                    <span>${mission.name} (${mission.points.length} points)</span>
+                    <input type="text" value="${mission.name}" onchange="AppController.renameMission(${i}, this.value)" style="width: 80px; border: 1px solid #ccc; padding: 4px;">
+                    <span>(${mission.points.length} points)</span>
                     <div>
                         <button onclick="AppController.loadMission(${i})">불러오기</button>
                         <button onclick="AppController.startMission(${i})">🚀 시작</button>
@@ -273,18 +274,60 @@
             green: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/green-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             yellow: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             blinkingRed: L.divIcon({ className: 'blinking-red-marker', html: `<div class="blinking-marker">📍</div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
-            // [추가됨] 비상 복귀 시 사용할 깜빡이는 노란색 아이콘
-            blinkingYellow: L.divIcon({ className: 'blinking-yellow-marker', html: `<div class="blinking-home-marker">🏠</div>`, iconSize: [32, 32], iconAnchor: [16, 32] })
+            blinkingYellow: L.divIcon({ className: 'blinking-yellow-marker', html: `<div class="blinking-home-marker">🏠</div>`, iconSize: [32, 32], iconAnchor: [16, 32] }),
+            default: new L.Icon.Default()
         },
 
         init() {
-            this.map = L.map('map').setView([37.3402, 126.7335], 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
-            this.map.on('click', (e) => AppController.handleMapClick(e.latlng));
-            console.log("✅ MapManager Initialized");
+        this.map = L.map('map').setView([37.3402, 126.7335], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
+        this.map.on('click', (e) => AppController.handleMapClick(e.latlng));
+        console.log("✅ MapManager Initialized");
         },
-        
-        renderMissionPath(points) { /* 이전 답변과 동일 */ },
+        renderMissionPath(points) {
+            this.clearMissionPath();
+            
+            // 1. 폴리라인 그리기
+            const latlngs = points.map(p => [p.lat, p.lng]);
+            if (latlngs.length > 1) {
+                this.polyline = L.polyline(latlngs, { color: 'blue' }).addTo(this.map);
+            }
+
+            // 2. 마커와 라벨 그리기
+            points.forEach((pt, i) => {
+                let icon = this.icons.default;
+                let extraLabel = '';
+
+                if (i === 0) {
+                    icon = this.icons.red;
+                    extraLabel = 'start point';
+                } else if (i === points.length - 1) {
+                    icon = this.icons.green;
+                    extraLabel = 'end point';
+                }
+
+                // 메인 마커 생성 (드래그 가능)
+                const marker = L.marker([pt.lat, pt.lng], { icon, draggable: true })
+                    .addTo(this.map)
+                    .bindPopup(`${extraLabel || 'WayPoint ' + (i + 1)} <button onclick="AppController.deleteMissionPoint(${i})">❌</button>`);
+                
+                // 마커 드래그 종료 시, 컨트롤러에 위치 변경을 알림
+                marker.on('dragend', (e) => {
+                    AppController.updateMissionPointPosition(i, e.target.getLatLng());
+                });
+
+                // 텍스트 라벨용 마커 생성
+                const labelIcon = L.divIcon({
+                    className: 'marker-label', // CSS로 스타일 지정 필요
+                    html: `<div>${extraLabel}</div>`,
+                    iconAnchor: [16, -10]
+                });
+                const labelMarker = L.marker([pt.lat, pt.lng], { icon: labelIcon }).addTo(this.map);
+
+                this.markers.push(marker);
+                this.markers.push(labelMarker); // 라벨 마커도 함께 관리
+            });
+        },
         clearMissionPath() {
             this.markers.forEach(m => this.map.removeLayer(m));
             this.markers = [];
@@ -295,21 +338,30 @@
             if (this.homeMarker) this.map.removeLayer(this.homeMarker);
             this.homeMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.yellow }).addTo(this.map).bindPopup("드론 홈 위치").openPopup();
         },
-        setEmergencyMarker(latlng) {
-            if (this.emergencyMarker) this.map.removeLayer(this.emergencyMarker);
-            this.clearMissionPath();
-            this.emergencyMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.blinkingRed }).addTo(this.map).bindPopup("🚨 응급 위치").openPopup();
-        },
-        clearEmergencyMarker() { /* 이전 답변과 동일 */ },
         
-        /** [추가됨] 홈 마커를 깜빡이게 하는 기능 */
+        setEmergencyMarker(latlng) {
+        this.clearEmergencyMarker(); // 기존 응급 마커가 있다면 지웁니다.
+        this.clearMissionPath();     // 다른 미션 경로가 있다면 지웁니다.
+        
+        this.emergencyMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.blinkingRed })
+            .addTo(this.map)
+            .bindPopup("🚨 응급 위치").openPopup();
+        console.log("🗺️ 응급 마커가 설정되었습니다.");
+        },
+        clearEmergencyMarker() {
+        if (this.emergencyMarker) {
+            this.map.removeLayer(this.emergencyMarker);
+            this.emergencyMarker = null;
+            console.log("🗺️ 응급 마커가 제거되었습니다.");
+        }
+        },
         startBlinkingHomeMarker() {
             if (this.homeMarker) {
                 this.homeMarker.setIcon(this.icons.blinkingYellow);
                 this.homeMarker.bindPopup("🚨 비상복귀 목적지").openPopup();
             }
         },
-        /** [추가됨] 홈 마커 깜빡임을 멈추는 기능 */
+        
         stopBlinkingHomeMarker() {
             if (this.homeMarker) {
                 this.homeMarker.setIcon(this.icons.yellow);
@@ -696,9 +748,18 @@
         
         deleteMissionPoint(index) {
             State.missions.currentMissionPoints.splice(index, 1);
+            // 상태가 변경되었으므로, MapManager에게 다시 그리라고 지시
             MapManager.renderMissionPath(State.missions.currentMissionPoints);
         },
         
+        updateMissionPointPosition(index, newLatLng) {
+            if (State.missions.currentMissionPoints[index]) {
+                State.missions.currentMissionPoints[index] = { lat: newLatLng.lat, lng: newLatLng.lng };
+                // 위치가 바뀌었으니, 경로(Polyline)만 다시 그리도록 지시
+                MapManager.renderMissionPath(State.missions.currentMissionPoints);
+            }
+        },
+
         emergencyReturn() {
             const drone = State.drones[State.ui.selectedDroneId];
             if (!drone.hasHome) return alert("홈 위치가 지정되지 않았습니다.");
@@ -728,6 +789,14 @@
         logout() {
             if (confirm("로그아웃 하시겠습니까?")) {
                 window.location.href = "/logout";
+            }
+        },
+    
+        renameMission(index, newName) {
+            if (State.missions.savedMissions[index]) {
+                State.missions.savedMissions[index].name = newName.trim();
+                console.log(`미션 ${index}의 이름이 '${newName.trim()}'으로 변경되었습니다.`);
+                // UIManager.render(State)를 호출할 수도 있지만, 이름 변경은 실시간으로 반영되므로 필수는 아님
             }
         }
     };
