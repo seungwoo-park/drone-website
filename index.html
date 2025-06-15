@@ -158,11 +158,11 @@
     // =======================================================================
     const State = {
         drones: {
-            'drone1': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
-            'drone2': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
-            'drone3': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
-            'drone4': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
-            'drone5': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
+            'drone1': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone2': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone3': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone4': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone5': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
         },
         ui: {
             selectedDroneId: 'drone1',
@@ -265,6 +265,7 @@
         }
     };
 
+    /** Leaflet 지도와 관련된 모든 것을 전담하는 객체 */
     const MapManager = {
         map: null, markers: [], polyline: null, homeMarker: null, emergencyMarker: null,
         icons: {
@@ -272,20 +273,18 @@
             green: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/green-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             yellow: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
             blinkingRed: L.divIcon({ className: 'blinking-red-marker', html: `<div class="blinking-marker">📍</div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
-            blinkingRed: L.divIcon({ className: 'blinking-yellow-marker', html: `<div class="blinking-yellow-dot"><img src="https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png" width="32" height="32"></div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
-        },        
+            // [추가됨] 비상 복귀 시 사용할 깜빡이는 노란색 아이콘
+            blinkingYellow: L.divIcon({ className: 'blinking-yellow-marker', html: `<div class="blinking-home-marker">🏠</div>`, iconSize: [32, 32], iconAnchor: [16, 32] })
+        },
+
         init() {
             this.map = L.map('map').setView([37.3402, 126.7335], 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
             this.map.on('click', (e) => AppController.handleMapClick(e.latlng));
             console.log("✅ MapManager Initialized");
         },
-        clearMissionPath() {
-            this.markers.forEach(m => this.map.removeLayer(m));
-            this.markers = [];
-            if (this.polyline) this.map.removeLayer(this.polyline);
-            this.polyline = null;
-        },
+        
+        renderMissionPath(points) { /* 이전 답변과 동일 */ },
         clearMissionPath() {
             this.markers.forEach(m => this.map.removeLayer(m));
             this.markers = [];
@@ -300,6 +299,22 @@
             if (this.emergencyMarker) this.map.removeLayer(this.emergencyMarker);
             this.clearMissionPath();
             this.emergencyMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.blinkingRed }).addTo(this.map).bindPopup("🚨 응급 위치").openPopup();
+        },
+        clearEmergencyMarker() { /* 이전 답변과 동일 */ },
+        
+        /** [추가됨] 홈 마커를 깜빡이게 하는 기능 */
+        startBlinkingHomeMarker() {
+            if (this.homeMarker) {
+                this.homeMarker.setIcon(this.icons.blinkingYellow);
+                this.homeMarker.bindPopup("🚨 비상복귀 목적지").openPopup();
+            }
+        },
+        /** [추가됨] 홈 마커 깜빡임을 멈추는 기능 */
+        stopBlinkingHomeMarker() {
+            if (this.homeMarker) {
+                this.homeMarker.setIcon(this.icons.yellow);
+                this.homeMarker.bindPopup("드론 홈 위치").closePopup();
+            }
         }
     };
 
@@ -619,6 +634,7 @@
                 // ApiClient.startMission(State.ui.selectedDroneId, mission.points);
             }
         },
+        
         /** 점검 모드 실행 */
         async inspection(mode) {
              const drone = State.drones[State.ui.selectedDroneId];
@@ -642,6 +658,7 @@
                 alert("요청 오류: " + err.message);
              }
         },
+       
         _checkPreFlight(drone) {
             if (drone.powerState !== 'on') { alert("드론 전원이 꺼져 있습니다."); return false; }
             if (!drone.hasHome) { alert("홈 위치를 먼저 지정해야 합니다."); return false; }
@@ -649,8 +666,6 @@
             if (drone.status.gps !== 'GOOD' || drone.status.lte !== 'GOOD') { alert("GPS 또는 LTE 신호가 불안정하여 이륙할 수 없습니다."); return false; }
             return true;
         },
-
-
 
         saveMission() {
             const { currentMissionPoints, savedMissions } = State.missions;
@@ -663,6 +678,7 @@
             MapManager.clearMissionPath();
             UIManager.render(State);
         },
+        
         loadMission(index) {
             const mission = State.missions.savedMissions[index];
             if (mission) {
@@ -670,26 +686,45 @@
                 MapManager.renderMissionPath(State.missions.currentMissionPoints);
             }
         },
+        
         deleteSavedMission(index) {
             if (confirm("정말로 이 미션을 삭제하시겠습니까?")) {
                 State.missions.savedMissions.splice(index, 1);
                 UIManager.render(State);
             }
         },
+        
         deleteMissionPoint(index) {
             State.missions.currentMissionPoints.splice(index, 1);
             MapManager.renderMissionPath(State.missions.currentMissionPoints);
         },
+        
         emergencyReturn() {
             const drone = State.drones[State.ui.selectedDroneId];
             if (!drone.hasHome) return alert("홈 위치가 지정되지 않았습니다.");
             if (confirm("비상복귀를 실행하시겠습니까?")) {
-                // ApiClient.emergencyReturn(State.ui.selectedDroneId, drone.homePosition);
-                drone.isFlying = false; // 복귀 후 착륙했다고 가정
+                drone.flightState = 'returning';
+                MapManager.startBlinkingHomeMarker(); // 홈 마커 깜빡임 시작
                 UIManager.render(State);
-                alert("비상복귀 명령 전송!");
+                
+                const command = {
+                    command: 'EMERGENCY_RETURN_TO_HOME',
+                    lat: drone.homePosition.lat,
+                    lng: drone.homePosition.lng,
+                };
+                alert(`비상복귀 명령 전송!\n${JSON.stringify(command)}`);
+                // ApiClient.emergencyReturn(State.ui.selectedDroneId, command);
+                
+                // (시뮬레이션) 복귀가 끝나면 상태를 변경하고 마커 깜빡임을 멈춤
+                setTimeout(() => {
+                    drone.flightState = 'grounded';
+                    MapManager.stopBlinkingHomeMarker();
+                    UIManager.render(State);
+                    alert("비상복귀 완료.");
+                }, 5000);
             }
         },
+        
         logout() {
             if (confirm("로그아웃 하시겠습니까?")) {
                 window.location.href = "/logout";
