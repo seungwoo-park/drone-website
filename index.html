@@ -158,11 +158,11 @@
     // =======================================================================
     const State = {
         drones: {
-            'drone1': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
-            'drone2': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
-            'drone3': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
-            'drone4': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
-            'drone5': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone1': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
+            'drone2': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
+            'drone3': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
+            'drone4': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
+            'drone5': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD', recon_mode: 'OFF', emergency_mode: 'OFF' }, lastError: null },
         },
         ui: {
             selectedDroneId: 'drone1',
@@ -182,13 +182,14 @@
     const UIManager = {
         elements: {},
         init() {
-            const ids = ['power-btn', 'sequential-mode-btn', 'emergency-mode-btn', 'home-btn', 'inspection-arming-btn', 'inspection-hover-btn', 'emergency-return-btn', 'droneSelector', 'map', 'video', 'status', 'stats', 'savedMissions', 'save-mission-btn', 'logout-btn', 'reconnect-container', 'drone-power-status'];
+            const ids = ['power-btn', 'sequential-mode-btn', 'emergency-mode-btn', 'home-btn', 'inspection-arming-btn', 'inspection-hover-btn', 'emergency-return-btn', 'droneSelector', 'map', 'video', 'status', 'stats', 'savedMissions', 'save-mission-btn', 'logout-btn', 'reconnect-container', 'drone-power-status', 'drone-name', 'status-power', 'status-lte', 'status-gps', 'status-recon', 'status-emergency', 'status-battery'];
             ids.forEach(id => { if(document.getElementById(id)) this.elements[id] = document.getElementById(id) });
             console.log("✅ UIManager Initialized");
         },
         render(state) {
             this.renderControlPanel(state);
             this.renderMissionList(state.missions.savedMissions);
+            this.renderDroneStatusPanel(state); // [추가됨] 상세 상태 패널 렌더링
             this.elements.droneSelector.value = state.ui.selectedDroneId;
         },
         renderControlPanel(state) {
@@ -248,6 +249,19 @@
                     </div>`;
                 this.elements.savedMissions.appendChild(li);
             });
+        },
+        /** [추가됨] 드론 상세 상태 패널(bottom-panel)을 렌더링합니다. */
+        renderDroneStatusPanel(state) {
+            const drone = state.drones[state.ui.selectedDroneId];
+            if (!drone) return;
+
+            this.elements['drone-name'].textContent = state.ui.selectedDroneId;
+            this.elements['status-power'].textContent = drone.powerState === 'on' ? 'ON' : 'OFF';
+            this.elements['status-lte'].textContent = drone.status.lte;
+            this.elements['status-gps'].textContent = drone.status.gps;
+            this.elements['status-recon'].textContent = drone.flightState === 'recon_mission' ? 'ON' : 'OFF';
+            this.elements['status-emergency'].textContent = drone.flightState === 'emergency_mission' ? 'ON' : 'OFF';
+            this.elements['status-battery'].textContent = `${drone.status.battery}%`;
         }
     };
 
@@ -304,10 +318,17 @@
                 throw error; // 에러를 상위로 전파
             }
         },
-        // 각 기능에 맞는 API 호출 함수들
+        async _get(endpoint) {
+             try {
+                const response = await fetch(endpoint);
+                if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+                return await response.json();
+            } catch (error) { console.error(`API call to ${endpoint} failed:`, error); throw error; }
+        },
         power: (droneId, action) => ApiClient._post(`/drone/${droneId}/power`, { action }),
         inspection: (droneId, mode) => ApiClient._post(`/drone/${droneId}/inspection`, { type: mode }),
-        // ...
+        /** [추가됨] 드론 상태를 가져오는 API 호출 함수 */
+        getStatus: (droneId) => ApiClient._get(`/drone/${droneId}/status`),
     };
 
     /** WebRTC 카메라 연결을 전담하는 객체 (이전 코드 통합 및 개선) */
@@ -402,12 +423,14 @@
     // 3. 중앙 관제탑 (The App Controller)
     // =======================================================================
     const AppController = {
+        statusUpdateInterval: null, // 주기적 업데이트를 위한 변수
+
         init() {
             UIManager.init();
             MapManager.init();
             WebRTCManager.init(UIManager.elements);
             this.addEventListeners();
-            this.selectDrone(State.ui.selectedDroneId); // 초기 드론 선택 및 카메라 연결
+            this.selectDrone(State.ui.selectedDroneId); // 초기 드론 선택 및 상태 업데이트 시작
             UIManager.render(State);
             console.log("✅ Drone Control Center is Online.");
         },
@@ -428,9 +451,39 @@
         /** 드론 선택 시 호출됩니다. */
         selectDrone(droneId) {
             State.ui.selectedDroneId = droneId;
-            WebRTCManager.connect(droneId); // 선택된 드론의 카메라 연결
+            WebRTCManager.connect(droneId);
+            this.startStatusUpdates(); // [수정됨] 드론을 선택하면 해당 드론의 상태 업데이트를 시작
             UIManager.render(State);
+        },     
+        
+        /** [추가됨] 주기적인 상태 업데이트를 시작/재시작하는 함수 */
+        startStatusUpdates() {
+            if (this.statusUpdateInterval) clearInterval(this.statusUpdateInterval); // 기존 업데이트 중지
+            
+            this.updateAndRenderStatus(); // 즉시 1회 실행
+            
+            this.statusUpdateInterval = setInterval(() => {
+                this.updateAndRenderStatus();
+            }, 5000); // 5초마다 상태 업데이트
         },
+        
+        /** [추가됨] 서버로부터 드론 상태를 가져와 State를 업데이트하고 UI를 다시 그리는 함수 */
+        async updateAndRenderStatus() {
+            const droneId = State.ui.selectedDroneId;
+            try {
+                const result = await ApiClient.getStatus(droneId);
+                if (result.status === 'success') {
+                    // 서버에서 받은 최신 상태로 State 객체를 업데이트
+                    State.drones[droneId].status = { ...State.drones[droneId].status, ...result.data };
+                }
+            } catch (error) {
+                console.warn(`${droneId} 상태 업데이트 실패:`, error.message);
+                State.drones[droneId].status.lte = 'UNKNOWN'; // 통신 실패 시 상태 변경
+            } finally {
+                UIManager.render(State); // 성공하든 실패하든 UI는 항상 다시 그림
+            }
+        },
+        
         /** [추가됨] 카메라 재연결을 지시하는 함수 */
         reconnectCamera() {
             console.log(`📹 ${State.ui.selectedDroneId} 카메라 재연결을 시도합니다...`);
@@ -647,14 +700,7 @@
     // =======================================================================
     // 4. 애플리케이션 시작
     // =======================================================================
-    window.addEventListener('load', () => {
-        AppController.init();
-    });
-
-    /** [추가됨] 페이지를 떠나기 전 모든 연결을 정리합니다. */
-    window.addEventListener('beforeunload', () => {
-        WebRTCManager.disconnect();
-    });
+    window.addEventListener('load', () => AppController.init());
 </script>
 </body>
 </html>
