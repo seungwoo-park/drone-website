@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Drone Map Mode</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background-color: #f0f4ff; }
+        body { display: flex; flex-direction: row; }
+
+        #left-panel { width: 30%; height: 100vh; display: flex; flex-direction: column; background: #ffffff; border-right: 2px solid #007bff; overflow: hidden; }
+        #bottom-panel { width: 69.9%; height: 33.3%; display: flex; flex-direction: row; background: #ffffff; border-top: 2px solid #007bff; border-left: 1px solid #007bff; overflow: hidden; position: absolute; bottom: 0; right: 0; z-index: 9999; }
+        .panel-section { flex: auto; padding: 17px; box-sizing: border-box; border-bottom: 1px solid #007bff; border-left: 1px solid #007bff; overflow-y: auto; }
+        .panel-section:last-child { border-bottom: none; }
+        .panel-section h3 { color: #007bff; margin-bottom: 10px; }
+    
+        .emergency-drone { font-size: 20px; font-weight: bold; color: #007bff; }
+
+        .panel-section button { padding: 8px 16px; margin: 4px 0; border: none; border-radius: 5px; background-color: #007bff; color: white; cursor: pointer; font-weight: 500; width: 100%; }
+        .panel-section button:hover { background-color: #0056b3; }
+        
+        #map { flex: 1; height: 100%; /* 수정: 하단 패널에 가려지지 않도록 높이 조정 */ }
+        .logout-btn { position: absolute; top: 10px; right: 10px; padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; z-index: 1000; }
+        .logout-btn:hover { background-color: #0056b3; }
+
+        .container { display: flex; flex-direction: column; align-items: center; background: #f9fbff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 8px rgba(0, 123, 255, 0.1); }
+        .container h2 { color: #0056b3; font-size: 18px; margin-bottom: 10px; }
+    
+        #video { border: 2px solid #007bff; border-radius: 12px; background-color: #000; width: 100%; height: auto; margin-top: 10px;}
+        .reconnect-btn { background-color: #007bff; color: white; padding: 10px; }
+        .reconnect-btn:hover { background-color: #0056b3; padding: 10px; }
+
+        .status { margin-top: 10px; border-radius: 8px; background-color: #e7f1ff; color: #004085; text-align: center; width: 100%; }
+        .controls { margin-top: 10px; width: 100%; display: flex; justify-content: center; }
+
+        .stats { margin-top: 10px; background: #e9f5ff; border-radius: 6px;font-family: monospace; font-size: 12px; color: #003366; width: 100%; }
+        #savedMissions { list-style: none; padding-left: 0; margin: 0 0 10px 0;}
+        #savedMissions li { background: #e7f1ff; padding: 8px; margin-bottom: 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .drone-control { display: flex; align-items: center; gap: 10px; margin: 10px 0; margin-top: 10px; }
+
+        .bottom-buttons { margin-top: 10px; text-align: center; }
+        .bottom-buttons button { background-color: #95a5a6; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 12px; }
+        .bottom-buttons button:hover { background-color: #7f8c8d;}
+
+        .drone-selector-container { display: flex; flex-direction: column; margin-top: 10px; margin-bottom: 10px; width: 100%; }
+        .selector-label { font-size: 16px; font-weight: bold; color: #007bff; margin-bottom: 6px; }
+        .styled-select { padding: 10px; border: 1px solid #007bff; border-radius: 8px; background-color: #f9fbff; color: #003366; font-size: 14px; appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg width='14' height='10' viewBox='0 0 14 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l6 6 6-6' stroke='%23007bff' stroke-width='2' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 12px; }
+        .styled-select:focus { outline: none; border-color: #0056b3; box-shadow: 0 0 4px rgba(0, 123, 255, 0.4); }
+
+        .blinking-red-marker { background: transparent; border: none; }
+        .blinking-marker { font-size: 25px; color: red; animation: blink 1s infinite; text-align: center; }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        .blinking-yellow-marker { background: transparent; border: none; }
+        .blinking-home-marker { font-size: 30px; animation: homeBlink 0.5s infinite; text-align: center; }
+
+        @keyframes homeBlink {
+            0%, 50% { opacity: 1; transform: scale(1); }
+            51%, 100% { opacity: 0.5; transform: scale(1.1); } 
+        }
+    </style>
+</head>
+<body>
+    <div id="left-panel">
+	<!-- 카메라 스트리밍 패널 -->
+        <div class="panel-section">
+            <div class="emergency-drone">Real-time Camera Streaming</div>
+            <video id="video" autoplay playsinline muted width="640" height="480"></video>
+            <div class="status" id="status">연결 준비 중...</div>
+            <div class="controls">
+                <button class="reconnect-btn" onclick="reconnect()">다시 연결</button>
+            </div>
+            <div class="stats" id="stats">
+                연결 상태: 대기 중<br>
+                비디오 상태: 대기 중<br>
+                마지막 업데이트: -
+            </div>
+        </div>
+
+	    <!-- 드론 제어 패널 -->
+        <div class="panel-section">
+            <div class="emergency-drone">Drone Control Panel</div>
+
+            <div class="drone-selector-container">
+                <strong style="font-size: 14px;">[드론 선택]</strong>
+                <select id="droneSelector" class="styled-select">
+                    <option value="drone1">Drone 1</option>
+                    <option value="drone2">Drone 2</option>
+                    <option value="drone3">Drone 3</option>
+                    <option value="drone4">Drone 4</option>
+                    <option value="drone5">Drone 5</option>
+                </select>
+            </div>
+
+            <div>
+                <strong style="font-size: 14px;">[드론 ON/OFF]</strong>
+                <button onclick="toggleDronePower()">드론 전원: OFF</button>
+                <div id="reconnect-container"></div>
+                <div id="drone-power-status" class="status">드론 상태: 대기 중...</div>
+            </div>
+
+            <div>
+                <strong style="font-size: 14px;">[드론 점검]</strong>
+                <button onclick="enterInspectionMode('arming')">✅ 점검모드1: Arming</button>
+                <button onclick="enterInspectionMode('hover')">🚁 점검모드2: Hover</button>
+            </div>
+
+            <strong style="font-size: 14px;">[드론 주행]</strong>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <button id="sequential-mode-btn" onclick="toggleSequentialMode()">정찰 모드: OFF</button><br>
+                <button id="emergency-mode-btn" onclick="toggleEmergencyMode()">응급 모드: OFF</button><br>
+            </div>
+
+            <strong style="font-size: 14px;">[드론 홈 지정]</strong>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <button id="home-btn" onclick="homeMode()">🏠홈 지정</button><br>
+                <button onclick="emergencyReturn()">비상복귀</button>
+            </div>
+        </div>
+
+	<!-- 오른쪽 메인 컨텐츠 (지도 + 하단 패널) -->
+    <div class="main-content">
+        <div id="map"></div>
+        <div id="bottom-panel">
+            <div class="panel-section">
+                <div class="emergency-drone">드론 상태</div>
+                <div id="drone-status-container">
+                    <h3><span id="drone-name">Drone 1</span> 상태</h3>
+                    <p>전원: <span id="status-power">OFF</span></p>
+                    <p>LTE: <span id="status-lte">OFF</span></p>
+                    <p>GPS: <span id="status-gps">OFF</span></p>
+                    <p>정찰 모드: <span id="status-recon">OFF</span></p>
+                    <p>응급 모드: <span id="status-emergency">OFF</span></p>
+                    <p>배터리: <span id="status-battery">-</span></p>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="emergency-drone">미션 목록</div>
+                <ul id="savedMissions"></ul>
+                <ul id="savedMissions"></ul>
+                <button id="save-mission-btn" onclick="saveMission()">📌 미션 저장하기</button>
+            </div>
+        </div>
+    </div>
+
+    <button class="logout-btn" onclick="confirmLogout()">로그아웃</button>
+    
+    <script>
+    // =======================================================================
+    // 1. 중앙 상태 저장소 (Single Source of Truth)
+    // =======================================================================
+    const State = {
+        drones: {
+            'drone1': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone2': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone3': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone4': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+            'drone5': { powerState: 'off', flightState: 'grounded', hasHome: false, homePosition: null, status: { battery: 100, gps: 'GOOD', lte: 'GOOD' }, lastError: null },
+        },
+        ui: {
+            selectedDroneId: 'drone1',
+            activeMapMode: 'none', // 'none', 'recon', 'emergency', 'set_home'
+        },
+        missions: { // 공용 미션
+            currentMissionPoints: [],
+            savedMissions: [],
+        }
+    };
+
+    // =======================================================================
+    // 2. 전문가 팀 (The Managers)
+    // =======================================================================
+
+    /** UI 렌더링과 관련된 모든 것을 전담하는 객체 */
+    const UIManager = {
+        elements: {},
+        init() {
+            const ids = ['power-btn', 'sequential-mode-btn', 'emergency-mode-btn', 'home-btn', 'inspection-arming-btn', 'inspection-hover-btn', 'emergency-return-btn', 'droneSelector', 'map', 'video', 'status', 'stats', 'savedMissions', 'save-mission-btn', 'logout-btn', 'reconnect-container', 'drone-power-status'];
+            ids.forEach(id => { if(document.getElementById(id)) this.elements[id] = document.getElementById(id) });
+            console.log("✅ UIManager Initialized");
+        },
+        render(state) {
+            this.renderControlPanel(state);
+            this.renderMissionList(state.missions.savedMissions);
+            this.elements.droneSelector.value = state.ui.selectedDroneId;
+        },
+        renderControlPanel(state) {
+            const drone = state.drones[state.ui.selectedDroneId];
+            if (!drone) return;
+
+            const { powerState, flightState, hasHome, status } = drone;
+            const isFlying = flightState !== 'grounded';
+            const isPowerOn = powerState === 'on';
+            const isReadyToFly = status.battery >= 20 && status.gps === 'GOOD' && status.lte === 'GOOD';
+            const canTakeOff = isPowerOn && hasHome && isReadyToFly && !isFlying;
+
+            this.updatePowerUI(drone);
+            this.elements['home-btn'].disabled = !isPowerOn || isFlying;
+            this.elements['home-btn'].textContent = `🏠 홈 지정 ${state.ui.activeMapMode === 'set_home' ? '(지정 중...)' : ''}`;
+
+            const controlButtons = ['sequential-mode-btn', 'emergency-mode-btn', 'inspection-arming-btn', 'inspection-hover-btn', 'save-mission-btn'];
+            controlButtons.forEach(id => { this.elements[id].disabled = !canTakeOff; });
+
+            this.elements['emergency-return-btn'].disabled = !isFlying;
+            
+            this.elements['sequential-mode-btn'].textContent = `정찰 모드: ${state.ui.activeMapMode === 'recon' ? 'ON' : 'OFF'}`;
+            this.elements['sequential-mode-btn'].style.backgroundColor = state.ui.activeMapMode === 'recon' ? 'green' : '';
+            this.elements['emergency-mode-btn'].textContent = `응급 모드: ${state.ui.activeMapMode === 'emergency' ? 'ON' : 'OFF'}`;
+            this.elements['emergency-mode-btn'].style.backgroundColor = state.ui.activeMapMode === 'emergency' ? 'red' : '';
+        },
+        updatePowerUI(drone) {
+            const powerBtn = this.elements['power-btn'];
+            const powerStatusDiv = this.elements['drone-power-status'];
+            const reconnectContainer = this.elements['reconnect-container'];
+            
+            reconnectContainer.innerHTML = '';
+            powerBtn.disabled = false;
+            
+            // 상세한 powerState에 따라 UI를 다르게 그립니다.
+            switch(drone.powerState) {
+                case 'off':
+                    powerBtn.textContent = '드론 전원: OFF';
+                    powerBtn.style.backgroundColor = '';
+                    powerStatusDiv.textContent = '드론 상태: 꺼짐';
+                    powerStatusDiv.style.backgroundColor = '#e7f1ff'; powerStatusDiv.style.color = '#004085';
+                    break;
+                case 'turning_on':
+                    powerBtn.textContent = '전원 켜는 중...';
+                    powerBtn.style.backgroundColor = 'gray';
+                    powerBtn.disabled = true;
+                    powerStatusDiv.textContent = '드론 상태: 연결 시도 중...';
+                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
+                    break;
+                case 'reconnecting':
+                    powerBtn.textContent = '재연결 중...';
+                    powerBtn.style.backgroundColor = 'gray';
+                    powerBtn.disabled = true;
+                    powerStatusDiv.textContent = '드론 상태: 재연결 시도 중...';
+                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
+                    break;
+                case 'on':
+                    powerBtn.textContent = '드론 전원: ON';
+                    powerBtn.style.backgroundColor = 'green';
+                    powerStatusDiv.textContent = '드론 상태: 연결됨';
+                    powerStatusDiv.style.backgroundColor = '#d1e7dd'; powerStatusDiv.style.color = '#0a3622';
+                    break;
+                case 'turning_off':
+                    powerBtn.textContent = '전원 끄는 중...';
+                    powerBtn.style.backgroundColor = 'gray';
+                    powerBtn.disabled = true;
+                    powerStatusDiv.textContent = '드론 상태: 연결 해제 중...';
+                    powerStatusDiv.style.backgroundColor = '#fff3cd'; powerStatusDiv.style.color = '#856404';
+                    break;
+                case 'failed':
+                    powerBtn.textContent = '드론 전원: 연결 실패';
+                    powerBtn.style.backgroundColor = 'red';
+                    powerStatusDiv.textContent = `연결 실패: ${drone.lastError || '알 수 없는 오류'}`;
+                    powerStatusDiv.style.backgroundColor = '#f8d7da'; powerStatusDiv.style.color = '#721c24';
+                    reconnectContainer.innerHTML = `<button onclick="AppController.reconnectDrone()">🔁 드론 재연결</button>`;
+                    break;
+            }
+            if (drone.flightState !== 'grounded') powerBtn.disabled = true;
+        },
+        renderMissionList(missions) {
+            this.elements.savedMissions.innerHTML = '';
+            missions.forEach((mission, i) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>${mission.name} (${mission.points.length} points)</span>
+                    <div>
+                        <button onclick="AppController.loadMission(${i})">불러오기</button>
+                        <button onclick="AppController.startMission(${i})">🚀 시작</button>
+                        <button onclick="AppController.deleteSavedMission(${i})">삭제</button>
+                    </div>`;
+                this.elements.savedMissions.appendChild(li);
+            });
+        }
+    };
+
+    const MapManager = {
+        map: null, markers: [], polyline: null, homeMarker: null, emergencyMarker: null,
+        icons: {
+            red: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/red-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
+            green: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/green-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
+            yellow: L.icon({iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/yellow-dot.png', iconSize: [32, 32], iconAnchor: [16, 32]}),
+            blinkingRed: L.divIcon({ className: 'blinking-red-marker', html: `<div class="blinking-marker">📍</div>`, iconSize: [25, 25], iconAnchor: [12, 25] }),
+        },
+        init() {
+            this.map = L.map('map').setView([37.3402, 126.7335], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(this.map);
+            this.map.on('click', (e) => AppController.handleMapClick(e.latlng));
+            console.log("✅ MapManager Initialized");
+        },
+        clearMissionPath() {
+            this.markers.forEach(m => this.map.removeLayer(m));
+            this.markers = [];
+            if (this.polyline) this.map.removeLayer(this.polyline);
+            this.polyline = null;
+        },
+        clearMissionPath() {
+            this.markers.forEach(m => this.map.removeLayer(m));
+            this.markers = [];
+            if (this.polyline) this.map.removeLayer(this.polyline);
+            this.polyline = null;
+        },
+        setHomeMarker(latlng) {
+            if (this.homeMarker) this.map.removeLayer(this.homeMarker);
+            this.homeMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.yellow }).addTo(this.map).bindPopup("드론 홈 위치").openPopup();
+        },
+        setEmergencyMarker(latlng) {
+            if (this.emergencyMarker) this.map.removeLayer(this.emergencyMarker);
+            this.clearMissionPath();
+            this.emergencyMarker = L.marker([latlng.lat, latlng.lng], { icon: this.icons.blinkingRed }).addTo(this.map).bindPopup("🚨 응급 위치").openPopup();
+        }
+    };
+
+    const ApiClient = {
+        async _post(endpoint, body) {
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error(`API call to ${endpoint} failed:`, error);
+                throw error; // 에러를 상위로 전파
+            }
+        },
+        // 각 기능에 맞는 API 호출 함수들
+        power: (droneId, action) => ApiClient._post(`/drone/${droneId}/power`, { action }),
+        inspection: (droneId, mode) => ApiClient._post(`/drone/${droneId}/inspection`, { type: mode }),
+        // ...
+    };
+
+    const WebRTCManager = {
+        pc: null,
+        ws: null,
+        droneIpMap: { // ❗️이 IP는 실제 드론의 내부 IP로 수정해야 합니다.
+            'drone1': '192.168.137.86',
+            'drone2': '192.168.137.87',
+            'drone3': '192.168.137.88',
+            'drone4': '192.168.137.89',
+            'drone5': '192.168.137.90',
+        },
+        connect(droneId) {
+            this.disconnect(); // 기존 연결 정리
+            const ip = this.droneIpMap[droneId];
+            if (!ip) {
+                console.error(`${droneId}의 IP 주소가 없습니다.`);
+                return;
+            }
+            console.log(`📹 ${droneId}(${ip}) 카메라 연결을 시작합니다.`);
+            // ... WebRTC 연결 설정 및 시작 로직 ...
+        },
+        disconnect() {
+            if (this.pc) this.pc.close();
+            if (this.ws) this.ws.close();
+            console.log("📹 WebRTC 연결이 종료되었습니다.");
+        }
+    };
+
+
+    // =======================================================================
+    // 3. 중앙 관제탑 (The App Controller)
+    // =======================================================================
+    const AppController = {
+        init() {
+            UIManager.init();
+            MapManager.init();
+            this.addEventListeners();
+            UIManager.render(State);
+            console.log("✅ Drone Control Center is Online.");
+        },
+        addEventListeners() {
+            UIManager.elements.droneSelector.addEventListener('change', (e) => this.selectDrone(e.target.value));
+            UIManager.elements['power-btn'].addEventListener('click', () => this.togglePower());
+            UIManager.elements['home-btn'].addEventListener('click', () => this.setMapMode('set_home'));
+            UIManager.elements['sequential-mode-btn'].addEventListener('click', () => this.setMapMode('recon'));
+            UIManager.elements['emergency-mode-btn'].addEventListener('click', () => this.setMapMode('emergency'));
+            UIManager.elements['inspection-arming-btn'].addEventListener('click', () => this.inspection('arming'));
+            UIManager.elements['inspection-hover-btn'].addEventListener('click', () => this.inspection('hover'));
+            UIManager.elements['emergency-return-btn'].addEventListener('click', () => this.emergencyReturn());
+            UIManager.elements['save-mission-btn'].addEventListener('click', () => this.saveMission());
+            UIManager.elements['logout-btn'].addEventListener('click', () => this.logout());
+        },
+        
+        /** 드론 선택 시 호출됩니다. */
+        selectDrone(droneId) {
+            State.ui.selectedDroneId = droneId;
+            // WebRTCManager.connect(droneId); // 선택된 드론의 카메라 연결
+            UIManager.render(State);
+        },
+
+        // --- 사용자 액션 처리 ---
+        /** 전원 버튼 토글 로직 */
+        async togglePower() {
+            const droneId = State.ui.selectedDroneId;
+            const drone = State.drones[droneId];
+            if (drone.flightState !== 'grounded') return alert("비행 중에는 전원을 끌 수 없습니다!");
+
+            const action = (drone.powerState === 'on') ? 'off' : 'on';
+            const loadingState = (action === 'on') ? 'turning_on' : 'turning_off';
+            
+            // 1. UI를 '로딩' 상태로 즉시 변경
+            drone.powerState = loadingState;
+            UIManager.render(State);
+
+            try {
+                // 2. 서버에 명령 전송
+                // await ApiClient.power(droneId, action);
+                console.log(`API: ${droneId} 전원 ${action}`);
+                await new Promise(resolve => setTimeout(resolve, 1500)); // API 호출 시뮬레이션
+
+                // 3. 성공 시 상태 업데이트
+                drone.powerState = (action === 'on') ? 'on' : 'off';
+                if (action === 'on' && !drone.hasHome) alert(`${droneId}의 전원이 켜졌습니다. 홈 위치를 지정해주세요.`);
+                if (action === 'off') {
+                    Object.assign(drone, { flightState: 'grounded', hasHome: false, homePosition: null });
+                    MapManager.clearMissionPath();
+                }
+
+            } catch (error) {
+                // 4. 실패 시 상태 업데이트
+                drone.powerState = 'failed';
+                drone.lastError = error.message;
+            } finally {
+                // 5. 최종 상태로 UI 다시 렌더링
+                UIManager.render(State);
+            }
+        },
+
+        /** 재연결 로직 */
+        async reconnectDrone() {
+            const droneId = State.ui.selectedDroneId;
+            const drone = State.drones[droneId];
+
+            drone.powerState = 'reconnecting';
+            UIManager.render(State);
+
+            try {
+                // await ApiClient.power(droneId, 'reconnect');
+                console.log(`API: ${droneId} 재연결`);
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                drone.powerState = 'on';
+                drone.lastError = null;
+            } catch (error) {
+                drone.powerState = 'failed';
+                drone.lastError = error.message;
+            } finally {
+                UIManager.render(State);
+            }
+        },
+
+        /** 지도 모드 변경 로직 */
+        setMapMode(modeToToggle) {
+            const drone = State.drones[State.ui.selectedDroneId];
+            if (drone.powerState !== 'on') return alert("드론 전원을 먼저 켜주세요.");
+            if (drone.flightState !== 'grounded' && modeToToggle === 'set_home') return alert("비행 중에는 홈을 재지정할 수 없습니다.");
+
+            const currentMode = State.ui.activeMapMode;
+            const isTurningOn = currentMode !== modeToToggle;
+            
+            const modeKor = { recon: '정찰', emergency: '응급', set_home: '홈 지정' };
+            const confirmMsg = isTurningOn ? `'${modeKor[modeToToggle]}' 모드를 활성화하시겠습니까?` : `'${modeKor[modeToToggle]}' 모드를 비활성화하시겠습니까?`;
+            
+            if (!confirm(confirmMsg)) return;
+
+            // 만약 새로운 모드를 켜는 것이고, 기존에 다른 모드가 켜져 있었다면, 자동 비활성화
+            if (isTurningOn && currentMode !== 'none') {
+                alert(`'${modeKor[currentMode]}' 모드가 자동으로 비활성화됩니다.`);
+                // 기존 모드에 대한 정리 작업 수행
+                if (currentMode === 'recon') MapManager.clearMissionPath();
+                if (currentMode === 'emergency') MapManager.clearEmergencyMarker();
+            }
+
+            // 최종적으로 상태를 변경
+            State.ui.activeMapMode = isTurningOn ? modeToToggle : 'none';
+            
+            // 모드를 명시적으로 끌 때 추가 정리 작업
+            if (!isTurningOn) {
+                if (modeToToggle === 'recon') MapManager.clearMissionPath();
+                if (modeToToggle === 'emergency') MapManager.clearEmergencyMarker();
+            }
+            
+            UIManager.render(State); // 변경된 상태에 따라 전체 UI를 다시 그림
+        },
+
+        /** 지도 클릭 핸들러 */
+        handleMapClick(latlng) {
+            const { activeMapMode, selectedDroneId } = State.ui;
+            if (activeMapMode === 'none') return;
+            const drone = State.drones[selectedDroneId];
+            
+            if (activeMapMode === 'set_home') {
+                drone.hasHome = true;
+                drone.homePosition = latlng;
+                MapManager.setHomeMarker(latlng);
+                this.setMapMode('set_home'); // 홈 지정 후 모드 자동 종료
+                alert(`${selectedDroneId}의 홈 위치가 지정되었습니다.`);
+            } else if (activeMapMode === 'recon') {
+                State.missions.currentMissionPoints.push({ lat: latlng.lat, lng: latlng.lng });
+                MapManager.renderMissionPath(State.missions.currentMissionPoints);
+            } else if (activeMapMode === 'emergency') {
+                MapManager.setEmergencyMarker(latlng);
+                // ApiClient.sendEmergency(...)
+            }
+        },
+        
+        /** 미션 시작 */
+        startMission(index) {
+            const drone = State.drones[State.ui.selectedDroneId];
+            if (!this._checkPreFlight(drone)) return;
+
+            const mission = State.missions.savedMissions[index];
+            if (!mission) return alert("미션을 찾을 수 없습니다.");
+            if (confirm(`'${mission.name}' 미션을 시작하시겠습니까?`)) {
+                drone.flightState = 'recon_mission';
+                UIManager.render(State);
+                alert(`${mission.name} 미션 시작!`);
+                // ApiClient.startMission(State.ui.selectedDroneId, mission.points);
+            }
+        },
+        /** 점검 모드 실행 */
+        async inspection(mode) {
+             const drone = State.drones[State.ui.selectedDroneId];
+             if (!this._checkPreFlight(drone)) return;
+
+             const modeText = mode === 'arming' ? 'Arming' : 'Hover';
+             if (!confirm(`${modeText} 점검 모드를 실행하시겠습니까?`)) return;
+             
+             try {
+                //  const result = await ApiClient.inspection(State.ui.selectedDroneId, mode);
+                //  alert(`[${State.ui.selectedDroneId}] 점검모드(${mode}) 요청 결과: ${result.message}`);
+                
+                // API 호출 시뮬레이션
+                alert(`[${State.ui.selectedDroneId}] 점검모드(${mode}) 요청 성공`);
+
+                if (mode === 'hover') {
+                    drone.flightState = 'hovering';
+                    UIManager.render(State);
+                }
+             } catch(err) {
+                alert("요청 오류: " + err.message);
+             }
+        },
+        _checkPreFlight(drone) {
+            if (drone.powerState !== 'on') { alert("드론 전원이 꺼져 있습니다."); return false; }
+            if (!drone.hasHome) { alert("홈 위치를 먼저 지정해야 합니다."); return false; }
+            if (drone.status.battery < 20) { alert("배터리가 부족하여 이륙할 수 없습니다."); return false; }
+            if (drone.status.gps !== 'GOOD' || drone.status.lte !== 'GOOD') { alert("GPS 또는 LTE 신호가 불안정하여 이륙할 수 없습니다."); return false; }
+            return true;
+        },
+
+
+
+        saveMission() {
+            const { currentMissionPoints, savedMissions } = State.missions;
+            if (currentMissionPoints.length < 2) return alert("정찰 지점은 2개 이상 필요합니다.");
+            const name = prompt("저장할 미션의 이름을 입력하세요:", `미션 ${savedMissions.length + 1}`);
+            if (!name) return;
+            
+            savedMissions.push({ name, points: [...currentMissionPoints] });
+            State.missions.currentMissionPoints = [];
+            MapManager.clearMissionPath();
+            UIManager.render(State);
+        },
+        loadMission(index) {
+            const mission = State.missions.savedMissions[index];
+            if (mission) {
+                State.missions.currentMissionPoints = [...mission.points];
+                MapManager.renderMissionPath(State.missions.currentMissionPoints);
+            }
+        },
+        deleteSavedMission(index) {
+            if (confirm("정말로 이 미션을 삭제하시겠습니까?")) {
+                State.missions.savedMissions.splice(index, 1);
+                UIManager.render(State);
+            }
+        },
+        deleteMissionPoint(index) {
+            State.missions.currentMissionPoints.splice(index, 1);
+            MapManager.renderMissionPath(State.missions.currentMissionPoints);
+        },
+        emergencyReturn() {
+            const drone = State.drones[State.ui.selectedDroneId];
+            if (!drone.hasHome) return alert("홈 위치가 지정되지 않았습니다.");
+            if (confirm("비상복귀를 실행하시겠습니까?")) {
+                // ApiClient.emergencyReturn(State.ui.selectedDroneId, drone.homePosition);
+                drone.isFlying = false; // 복귀 후 착륙했다고 가정
+                UIManager.render(State);
+                alert("비상복귀 명령 전송!");
+            }
+        },
+        logout() {
+            if (confirm("로그아웃 하시겠습니까?")) {
+                window.location.href = "/logout";
+            }
+        }
+    };
+
+    // =======================================================================
+    // 4. 애플리케이션 시작
+    // =======================================================================
+    window.addEventListener('load', () => AppController.init());
+</script>
+</body>
+</html>
